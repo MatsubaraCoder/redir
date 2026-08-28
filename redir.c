@@ -13,7 +13,7 @@ typedef enum
     SUCCESS,
     NULL_PARAMETER,
     OPEN_FILE_FAILED,
-    CREATE_TEMPFILE_FAILED,
+    CREATE_FILE_FAILED,
     MALLOC_FAILED,
     GET_SIZEOF_FILE_FAILED,
     READ_WHOLE_FILE_FAILED,
@@ -68,6 +68,34 @@ char *readfile(const char *file_path, file_error_code_t *error_code)
 
     *error_code = SUCCESS;
     return file_content;
+}
+
+void writefile(const char *filepath, const char *content, file_error_code_t *error_code)
+{
+    if (!filepath || !content)
+    {
+        *error_code = NULL_PARAMETER;
+        return;
+    }
+
+    FILE *file = fopen(filepath, "wb");
+    if (!file)
+    {
+        *error_code = OPEN_FILE_FAILED;
+        return;
+    }
+
+    size_t sizeof_content = strlen(content);
+    size_t bytes_write = fwrite(content, 1, sizeof_content, file);
+    fclose(file);
+
+    if (bytes_write < sizeof_content)
+    {
+        *error_code = WRITE_WHOLE_CONTENT_FAILED;
+        return;
+    }
+
+    *error_code = SUCCESS;
 }
 
 
