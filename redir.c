@@ -17,6 +17,7 @@ typedef enum
     MALLOC_FAILED,
     GET_SIZEOF_FILE_FAILED,
     READ_WHOLE_FILE_FAILED,
+    WRITE_WHOLE_CONTENT_FAILED,
 } file_error_code_t;
 
 
@@ -96,6 +97,28 @@ void writefile(const char *filepath, const char *content, file_error_code_t *err
     }
 
     *error_code = SUCCESS;
+}
+
+char *create_tempfile(file_error_code_t *error_code)
+{
+    char *tempfile_path = malloc(strlen("/tmp/vdir-XXXXXX") + 1);
+    if (!tempfile_path)
+    {
+        *error_code = MALLOC_FAILED;
+        return NULL;
+    }
+
+    int temp_fd = mkstemp(tempfile_path);
+    if (temp_fd == -1)
+    {
+        *error_code = CREATE_FILE_FAILED;
+        return NULL;
+    }
+
+    close(temp_fd);
+
+    *error_code = SUCCESS;
+    return tempfile_path;
 }
 
 
