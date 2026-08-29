@@ -1,8 +1,11 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <sys/types.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <string.h>
+#include <linux/limits.h>
 
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
@@ -10,29 +13,41 @@
 
 typedef enum
 {
-    SUCCESS,
-    NULL_PARAMETER,
-    OPEN_FILE_FAILED,
-    CREATE_FILE_FAILED,
-    MALLOC_FAILED,
-    GET_SIZEOF_FILE_FAILED,
-    READ_WHOLE_FILE_FAILED,
-    WRITE_WHOLE_CONTENT_FAILED,
+    FILE_SUCCESS,
+    FILE_NULL_PARAMETER,
+    FILE_OPEN_FILE_FAILED,
+    FILE_CREATE_FILE_FAILED,
+    FILE_MALLOC_FAILED,
+    FILE_GET_SIZEOF_FILE_FAILED,
+    FILE_READ_WHOLE_FILE_FAILED,
+    FILE_WRITE_WHOLE_CONTENT_FAILED,
 } file_error_code_t;
+
+typedef enum
+{
+    DIR_NULL_PARAMETER,
+    DIR_READ_DIRECTORY_FAILED,
+} get_dir_error_t;
+
+typedef struct
+{
+    ino_t       key;
+    char        *value;
+} InodeMap;
 
 
 char *readfile(const char *file_path, file_error_code_t *error_code)
 {
     if (!file_path)
     {
-        *error_code = NULL_PARAMETER;
+        *error_code = FILE_NULL_PARAMETER;
         return NULL;
     }
 
     FILE *file = fopen(file_path, "rb");
     if (!file)
     {
-        *error_code = OPEN_FILE_FAILED;
+        *error_code = FILE_OPEN_FILE_FAILED;
         return NULL;
     }
 
@@ -42,7 +57,7 @@ char *readfile(const char *file_path, file_error_code_t *error_code)
 
     if (sizeof_file < 0)
     {
-        *error_code = GET_SIZEOF_FILE_FAILED;
+        *error_code = FILE_GET_SIZEOF_FILE_FAILED;
         fclose(file);
         return NULL;
     }
@@ -50,7 +65,7 @@ char *readfile(const char *file_path, file_error_code_t *error_code)
     char *file_content = malloc(sizeof_file + 1);
     if (!file_content)
     {
-        *error_code = MALLOC_FAILED;
+        *error_code = FILE_MALLOC_FAILED;
         fclose(file);
         return NULL;
     }
@@ -60,14 +75,14 @@ char *readfile(const char *file_path, file_error_code_t *error_code)
 
     if ((size_t)sizeof_file != bytes_read)
     {
-        *error_code = READ_WHOLE_FILE_FAILED;
+        *error_code = FILE_READ_WHOLE_FILE_FAILED;
         fclose(file);
         return NULL;
     }
 
     fclose(file);
 
-    *error_code = SUCCESS;
+    *error_code = FILE_SUCCESS;
     return file_content;
 }
 
@@ -75,14 +90,14 @@ void writefile(const char *filepath, const char *content, file_error_code_t *err
 {
     if (!filepath || !content)
     {
-        *error_code = NULL_PARAMETER;
+        *error_code = FILE_NULL_PARAMETER;
         return;
     }
 
     FILE *file = fopen(filepath, "wb");
     if (!file)
     {
-        *error_code = OPEN_FILE_FAILED;
+        *error_code = FILE_OPEN_FILE_FAILED;
         return;
     }
 
@@ -92,11 +107,11 @@ void writefile(const char *filepath, const char *content, file_error_code_t *err
 
     if (bytes_write < sizeof_content)
     {
-        *error_code = WRITE_WHOLE_CONTENT_FAILED;
+        *error_code = FILE_WRITE_WHOLE_CONTENT_FAILED;
         return;
     }
 
-    *error_code = SUCCESS;
+    *error_code = FILE_SUCCESS;
 }
 
 char *create_tempfile(file_error_code_t *error_code)
@@ -104,23 +119,61 @@ char *create_tempfile(file_error_code_t *error_code)
     char *tempfile_path = malloc(strlen("/tmp/vdir-XXXXXX") + 1);
     if (!tempfile_path)
     {
-        *error_code = MALLOC_FAILED;
+        *error_code = FILE_MALLOC_FAILED;
         return NULL;
     }
 
     int temp_fd = mkstemp(tempfile_path);
     if (temp_fd == -1)
     {
-        *error_code = CREATE_FILE_FAILED;
+        *error_code = FILE_CREATE_FILE_FAILED;
         return NULL;
     }
 
     close(temp_fd);
 
-    *error_code = SUCCESS;
+    *error_code = FILE_SUCCESS;
     return tempfile_path;
 }
 
+InodeMap *get_all_directories(const char *path, get_dir_error_t *error_code)
+{
+    if (!path || !error_code)
+    {
+        *error_code = DIR_NULL_PARAMETER;
+        return NULL;
+    }
+
+    DIR *dir = opendir(path);
+    if (!dir)
+    {
+        *error_code = DIR_READ_DIRECTORY_FAILED;
+        return NULL;
+    }
+
+    InodeMap *directory_map = NULL;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL)
+    {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+            continue;
+
+        hmput(directory_map, entry->d_ino, strdup(entry->d_name));
+    }
+
+    closedir(dir);
+
+    return directory_map;
+}
+
+void free_inode_map(InodeMap **map)
+{
+    for (ptrdiff_t i = 0; i < hmlen(*map); i++)
+        free((*map)[i].value);
+
+    hmfree(*map);
+    *map = NULL;
+}
 
 int main()
 {
