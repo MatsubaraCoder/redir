@@ -1,10 +1,13 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <sys/wait.h>
 #include <dirent.h>
 #include <string.h>
+#include <errno.h>
 #include <linux/limits.h>
 
 #define STB_DS_IMPLEMENTATION
@@ -25,6 +28,7 @@ typedef enum
 
 typedef enum
 {
+    DIR_SUCCESS,
     DIR_NULL_PARAMETER,
     DIR_READ_DIRECTORY_FAILED,
 } get_dir_error_t;
@@ -86,7 +90,8 @@ char *readfile(const char *file_path, file_error_code_t *error_code)
     return file_content;
 }
 
-void writefile(const char *filepath, const char *content, file_error_code_t *error_code)
+void writefile(const char *filepath, const char *content,
+               file_error_code_t *error_code)
 {
     if (!filepath || !content)
     {
@@ -163,6 +168,7 @@ InodeMap *get_all_directories(const char *path, get_dir_error_t *error_code)
 
     closedir(dir);
 
+    *error_code = DIR_SUCCESS;
     return directory_map;
 }
 
@@ -173,6 +179,98 @@ void free_inode_map(InodeMap **map)
 
     hmfree(*map);
     *map = NULL;
+}
+
+const char *get_editor()
+{
+    const char *editor_env = getenv("VISUAL");
+    if (!editor_env || editor_env[0] == '\0')
+        editor_env = getenv("EDITOR");
+
+    if (!editor_env || editor_env[0] == '\0')
+        editor_env = "vi"; // NOTE: set default editor
+
+    return editor_env;
+}
+
+typedef enum
+{
+    LAUNCHER_SUCCESS,
+    LAUNCHER_FORK_FAILED,
+    LAUNCHER_WAITPID_FAILED,
+    LAUNCHER_EDITOR_NOT_FOUND,
+    LAUNCHER_EXIT_CODE_NONZERO,
+    LAUNCHER_EDITOR_SIGNALED,
+
+} editor_launcher_error_code_t;
+#define LAUNCHER_EXEC_FAILED_EXIT_CODE 127
+
+static bool _show_log = false;
+
+void show_editor_launcher_log(bool show_log)
+{
+    _show_log = show_log;
+}
+#define EDITOR_LAUNCHER_LOG(...)            \
+    do {                                    \
+        if (_show_log)                      \
+            fprintf(stderr, __VA_ARGS__);   \
+    } while(0)                              \
+
+void editor_launcher(const char *editor, char *const *editor_args,
+                  editor_launcher_error_code_t *error_code)
+{
+    pid_t pid = fork();
+    if (pid == -1)
+    {
+        *error_code = LAUNCHER_FORK_FAILED;
+        EDITOR_LAUNCHER_LOG("[EDITOR LAUNCHER]: fork failed %s\n", strerror(errno));
+        return;
+    }
+
+    if (pid == 0)
+    {
+        EDITOR_LAUNCHER_LOG("[EDITOR LAUNCHER]: run editor\n");
+        execvp(editor, editor_args);
+        printf("test\n");
+        *error_code =  LAUNCHER_EXEC_FAILED_EXIT_CODE;
+        _exit(LAUNCHER_EXEC_FAILED_EXIT_CODE);
+    }
+
+    int status;
+    if ((waitpid(pid, &status, 0)) == -1)
+    {
+        *error_code = LAUNCHER_WAITPID_FAILED;
+        EDITOR_LAUNCHER_LOG("[EDITOR LAUNCHER]: waitpid failed %s\n", strerror(errno));
+        return;
+    }
+
+    if (WIFEXITED(status))
+    {
+        int exit_code = WEXITSTATUS(status);
+
+        if (exit_code == LAUNCHER_EXEC_FAILED_EXIT_CODE )
+        {
+            *error_code = LAUNCHER_EDITOR_NOT_FOUND;
+            EDITOR_LAUNCHER_LOG("[EDITOR LAUNCHER]: editor %s not found\n", editor);
+        }
+        else if (exit_code != 0)
+        {
+            *error_code = LAUNCHER_EXIT_CODE_NONZERO;
+            EDITOR_LAUNCHER_LOG("[EDITOR LAUNCHER]: editor exited with code %d\n", exit_code);
+        }
+        else
+        {
+            *error_code = LAUNCHER_SUCCESS;
+            EDITOR_LAUNCHER_LOG("[EDITOR LAUNCHER]: editor exited successful\n");
+        }
+    }
+    else if (WIFSIGNALED(status))
+    {
+        *error_code = LAUNCHER_EDITOR_SIGNALED;
+        EDITOR_LAUNCHER_LOG("[EDITOR LAUNCHER]: editor signaled with %d and message %s\n",
+                            WTERMSIG(status), strsignal(WTERMSIG(status)));
+    }
 }
 
 int main()
