@@ -121,7 +121,10 @@ void writefile(const char *filepath, const char *content,
 
 char *create_tempfile(file_error_code_t *error_code)
 {
-    char *tempfile_path = malloc(strlen("/tmp/vdir-XXXXXX") + 1);
+    char *template_filepath = "/tmp/vdir-XXXXXX";
+    char *tempfile_path = malloc(strlen(template_filepath) + 1);
+    strcpy(tempfile_path, template_filepath);
+
     if (!tempfile_path)
     {
         *error_code = FILE_MALLOC_FAILED;
@@ -232,7 +235,6 @@ void editor_launcher(const char *editor, char *const *editor_args,
     {
         EDITOR_LAUNCHER_LOG("[EDITOR LAUNCHER]: run editor\n");
         execvp(editor, editor_args);
-        printf("test\n");
         *error_code =  LAUNCHER_EXEC_FAILED_EXIT_CODE;
         _exit(LAUNCHER_EXEC_FAILED_EXIT_CODE);
     }
