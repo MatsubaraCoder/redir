@@ -6,9 +6,12 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <sys/wait.h>
+#include <ctype.h>
 #include <string.h>
 #include <linux/limits.h>
 #include <errno.h>
+
+#include "sds.h"
 
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
@@ -273,6 +276,56 @@ void editor_launcher(const char *editor, char *const *editor_args,
         EDITOR_LAUNCHER_LOG("[EDITOR LAUNCHER]: editor signaled with %d and message %s\n",
                             WTERMSIG(status), strsignal(WTERMSIG(status)));
     }
+}
+
+InodeMap *parser(const sds directories_string, sds **new_dirs)
+{
+    if (!directories_string)
+    {
+        return NULL;
+    }
+
+    InodeMap *modify_or_old_dirs = NULL;
+
+    int count_of_lines;
+    sds *lines = sdssplitlen(directories_string, sdslen(directories_string),
+                             "\n", 1, &count_of_lines);
+
+    for (int i = 0; i < count_of_lines; i++)
+    {
+        sds line = sdsdup(lines[i]);
+        sdstrim(line, "\r\n\t ");
+
+        if (strlen(line) == 0)
+        {
+            sdsfree(line);
+            continue;
+        }
+
+        if (isdigit((unsigned char)line[0]))
+        {
+            char *tab_ptr = memchr(line, '\t', sdslen(line));
+            if (!tab_ptr)
+            {
+                arrpush(*new_dirs, sdsdup(line));
+                continue;
+            }
+
+            char *end_of_inode_part_ptr;
+            long inode = strtol(line, &end_of_inode_part_ptr, 10);
+            sds entry_name = sdsnew(end_of_inode_part_ptr + 1);
+            hmput(modify_or_old_dirs , inode, entry_name);
+        }
+        else
+        {
+            arrpush(*new_dirs, sdsdup(line));
+        }
+
+        sdsfree(line);
+    }
+
+    sdsfreesplitres(lines , count_of_lines);
+    return modify_or_old_dirs;
 }
 
 int main()
