@@ -5,6 +5,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <ctype.h>
 #include <string.h>
@@ -328,7 +330,134 @@ InodeMap *parser(const sds directories_string, sds **new_dirs)
     return modify_or_old_dirs;
 }
 
+bool hmvalue_exitst(const InodeMap *map, sds value)
+{
+    for (int i = 0 ; i < hmlen(map); i++)
+        if (sdscmp(map[i].value, value) == 0)
+            return true;
+    return false;
+}
+
 int main()
 {
+    file_error_code_t ctf_error;
+    char *tempfile_path = create_tempfile(&ctf_error);
+    if (ctf_error != FILE_SUCCESS)
+    {
+        if (ctf_error == FILE_CREATE_FILE_FAILED)
+            fprintf(stderr, "[TEMP FILE]: create temp file failed\n");
+        else if (ctf_error == FILE_MALLOC_FAILED)
+            fprintf(stderr, "[MEM]: malloc failed\n");
+
+        return -1;
+    }
+
+    get_dir_error_t gad_error;
+    InodeMap *all_directories_map = get_all_directories("./", &gad_error);
+    if (gad_error != DIR_SUCCESS)
+    {
+        if (gad_error == DIR_READ_DIRECTORY_FAILED)
+            fprintf(stderr, "[DIR]: failed read directory\n");
+
+        free_inode_map(&all_directories_map);
+        return -1;
+    }
+
+    sds all_directories_str = sdsempty();
+    for (ptrdiff_t i = 0; i < hmlen(all_directories_map); i++)
+    {
+        all_directories_str = sdscatfmt(all_directories_str, "%i\t%s\n", all_directories_map[i].key, all_directories_map[i].value);
+    }
+    file_error_code_t wf_error;
+    writefile(tempfile_path, all_directories_str, &wf_error);
+    sdsfree(all_directories_str);
+    if (wf_error != FILE_SUCCESS)
+    {
+        if (FILE_OPEN_FILE_FAILED)
+            fprintf(stderr, "[TEMP FILE]: falied opne temp file\n");
+        else if (FILE_WRITE_WHOLE_CONTENT_FAILED)
+            fprintf(stderr, "[TEMP FILE]: falied write temp file\n");
+
+        return -1;
+    }
+
+    printf("temp file path: %s\n", tempfile_path);
+
+    const char *editor = get_editor();
+    if (!editor)
+    {
+        fprintf(stderr, "[EDITOR]: failed to get default editor from envinroment variables.\n"
+            "please set VISUAL or EDITOR enviroment variables\n");
+
+        return -1;
+    }
+    show_editor_launcher_log(true);
+    editor_launcher_error_code_t el_error;
+    editor_launcher(editor, (char*[]){"editor", tempfile_path, NULL}, &el_error);
+    if (el_error != LAUNCHER_SUCCESS)
+    {
+        return -1; // remove logging from editor_launcher, and log it in main instead
+    }
+
+    file_error_code_t rtf_error ;
+    char *tempfile_content_after_edit = readfile(tempfile_path, &rtf_error);
+    if (rtf_error != FILE_SUCCESS)
+    {
+        if (rtf_error == FILE_OPEN_FILE_FAILED)
+            fprintf(stderr, "[TEMP FILE]: failed open temp file\n");
+        else if (rtf_error == FILE_GET_SIZEOF_FILE_FAILED)
+            fprintf(stderr, "[TEMP FILE]: failed to get size of temp file\n");
+        else if (rtf_error == FILE_MALLOC_FAILED)
+            fprintf(stderr, "[MEM]: malloc failed\n");
+        else if (rtf_error == FILE_READ_WHOLE_FILE_FAILED)
+            fprintf(stderr, "[TEMP FILE]: failed to read temp file\n");
+
+        free(tempfile_content_after_edit);
+        return -1;
+    }
+
+    const sds directories_after_chabges_str = sdsnew((const char *)tempfile_content_after_edit);
+    free(tempfile_content_after_edit); tempfile_content_after_edit = NULL;
+    sds *new_dires;
+    InodeMap *directories_after_chages_map = parser(directories_after_chabges_str, &new_dires);
+    sdsfree(directories_after_chabges_str);
+
+    for (int i = 0; i < arrlen(new_dires); i++)
+    {
+        sds current_entry = new_dires[i];
+        if (hmvalue_exitst(directories_after_chages_map, current_entry))
+        {
+            printf("%s exist, ignored\n", current_entry);
+            continue;
+        }
+        printf("new dir/file: %s\n", current_entry);
+        if (current_entry[sdslen(current_entry) - 1] == '/')
+        {
+            if (mkdir(current_entry, 0755) == -1)
+            {
+                fprintf(stderr, "[CREATE DIRECTORY]: create directory %s failed\n"
+                        "mkdir function error: %s\n", current_entry, strerror(errno));
+            }
+            printf("directory %s created\n", current_entry);
+        }
+        else
+        {
+            int fd = open(current_entry, O_CREAT | O_WRONLY, 0644);
+            if (fd == -1)
+            {
+                fprintf(stderr, "[CREATE FILE]: create file %s failed\n"
+                        "open function error: %s\n", current_entry, strerror(errno));
+            }
+            close(fd);
+            printf("file %s created\n", current_entry);
+        }
+
+        sdsfree(current_entry);
+    }
+
+    free_inode_map(&directories_after_chages_map);
+    arrfree(new_dires);
+    free_inode_map(&all_directories_map);
+
     return 0;
 }
