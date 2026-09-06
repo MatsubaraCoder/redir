@@ -169,7 +169,7 @@ InodeMap *get_all_directories(const char *path, get_dir_error_t *error_code)
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
             continue;
 
-        hmput(directory_map, entry->d_ino, strdup(entry->d_name));
+        hmput(directory_map, entry->d_ino, sdsnew(entry->d_name));
     }
 
     closedir(dir);
@@ -181,7 +181,7 @@ InodeMap *get_all_directories(const char *path, get_dir_error_t *error_code)
 void free_inode_map(InodeMap **map)
 {
     for (ptrdiff_t i = 0; i < hmlen(*map); i++)
-        free((*map)[i].value);
+        sdsfree((*map)[i].value);
 
     hmfree(*map);
     *map = NULL;
