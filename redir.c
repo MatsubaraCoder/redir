@@ -355,6 +355,7 @@ int main()
 
     get_dir_error_t gad_error;
     InodeMap *all_directories_map = get_all_directories("./", &gad_error);
+    hmdefault(all_directories_map, sdsempty());
     if (gad_error != DIR_SUCCESS)
     {
         if (gad_error == DIR_READ_DIRECTORY_FAILED)
@@ -421,6 +422,7 @@ int main()
     free(tempfile_content_after_edit); tempfile_content_after_edit = NULL;
     sds *new_dires;
     InodeMap *directories_after_chages_map = parser(directories_after_chabges_str, &new_dires);
+    hmdefault(directories_after_chages_map, sdsempty());
     sdsfree(directories_after_chabges_str);
 
     for (int i = 0; i < arrlen(new_dires); i++)
@@ -462,6 +464,13 @@ int main()
         sds current_old_fname;
         if (sdscmp(current_fname, (current_old_fname = hmget(all_directories_map, current_inode))) != 0)
         {
+            if (strcmp(current_old_fname, "") == 0)
+            {
+                fprintf(stderr, "[INODE]: invalid inode; please do not modify inodes manually. "
+                        "%s ignored\n", current_fname);
+                continue;
+            }
+
             if (rename(current_old_fname, current_fname) != 0)
             {
                 fprintf(stderr, "[MOVE/RENAME]: move from %s to %s failed: %s\n",
