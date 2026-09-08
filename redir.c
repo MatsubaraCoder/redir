@@ -428,10 +428,9 @@ int main()
         sds current_entry = new_dires[i];
         if (hmvalue_exitst(directories_after_chages_map, current_entry))
         {
-            printf("%s exist, ignored\n", current_entry);
+            printf("[CREATE FILE/DIR]: %s exist, ignored\n", current_entry);
             continue;
         }
-        printf("new dir/file: %s\n", current_entry);
         if (current_entry[sdslen(current_entry) - 1] == '/')
         {
             if (mkdir(current_entry, 0755) == -1)
@@ -439,7 +438,7 @@ int main()
                 fprintf(stderr, "[CREATE DIRECTORY]: create directory %s failed\n"
                         "mkdir function error: %s\n", current_entry, strerror(errno));
             }
-            printf("directory %s created\n", current_entry);
+            printf("[CREATE DIRECTORY]: directory %s created\n", current_entry);
         }
         else
         {
@@ -450,7 +449,7 @@ int main()
                         "open function error: %s\n", current_entry, strerror(errno));
             }
             close(fd);
-            printf("file %s created\n", current_entry);
+            printf("[CREATE FILE]: file %s created\n", current_entry);
         }
 
         sdsfree(current_entry);
@@ -465,12 +464,12 @@ int main()
         {
             if (rename(current_old_fname, current_fname) != 0)
             {
-                fprintf(stderr, "move from %s to %s failed: %s\n",
+                fprintf(stderr, "[MOVE/RENAME]: move from %s to %s failed: %s\n",
                         current_old_fname, current_fname, strerror(errno));
             }
             else
             {
-                printf("move from %s to %s\n", current_old_fname, current_fname);
+                printf("[MOVE/RENAME]: move from %s to %s\n", current_old_fname, current_fname);
             }
         }
     }
