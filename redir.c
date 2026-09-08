@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -238,7 +239,7 @@ void editor_launcher(const char *editor, char *const *editor_args,
 
     if (pid == 0)
     {
-        EDITOR_LAUNCHER_LOG("[EDITOR LAUNCHER]: run editor\n");
+        // EDITOR_LAUNCHER_LOG("[EDITOR LAUNCHER]: run editor\n");
         execvp(editor, editor_args);
         *error_code =  LAUNCHER_EXEC_FAILED_EXIT_CODE;
         _exit(LAUNCHER_EXEC_FAILED_EXIT_CODE);
@@ -269,7 +270,7 @@ void editor_launcher(const char *editor, char *const *editor_args,
         else
         {
             *error_code = LAUNCHER_SUCCESS;
-            EDITOR_LAUNCHER_LOG("[EDITOR LAUNCHER]: editor exited successful\n");
+            // EDITOR_LAUNCHER_LOG("[EDITOR LAUNCHER]: editor exited successful\n");
         }
     }
     else if (WIFSIGNALED(status))
@@ -366,7 +367,9 @@ int main()
     sds all_directories_str = sdsempty();
     for (ptrdiff_t i = 0; i < hmlen(all_directories_map); i++)
     {
-        all_directories_str = sdscatfmt(all_directories_str, "%i\t%s\n", all_directories_map[i].key, all_directories_map[i].value);
+        all_directories_str = sdscatfmt(all_directories_str, "%i\t%s\n",
+                                        all_directories_map[i].key,
+                                        all_directories_map[i].value);
     }
     file_error_code_t wf_error;
     writefile(tempfile_path, all_directories_str, &wf_error);
@@ -381,8 +384,6 @@ int main()
         return -1;
     }
 
-    printf("temp file path: %s\n", tempfile_path);
-
     const char *editor = get_editor();
     if (!editor)
     {
@@ -396,7 +397,7 @@ int main()
     editor_launcher(editor, (char*[]){"editor", tempfile_path, NULL}, &el_error);
     if (el_error != LAUNCHER_SUCCESS)
     {
-        return -1; // remove logging from editor_launcher, and log it in main instead
+        return -1;
     }
 
     file_error_code_t rtf_error ;
@@ -453,6 +454,25 @@ int main()
         }
 
         sdsfree(current_entry);
+    }
+
+    for (ptrdiff_t i = 0; i < hmlen(directories_after_chages_map); i++)
+    {
+        ino_t current_inode = directories_after_chages_map[i].key;
+        sds current_fname = directories_after_chages_map[i].value;
+        sds current_old_fname;
+        if (sdscmp(current_fname, (current_old_fname = hmget(all_directories_map, current_inode))) != 0)
+        {
+            if (rename(current_old_fname, current_fname) != 0)
+            {
+                fprintf(stderr, "move from %s to %s failed: %s\n",
+                        current_old_fname, current_fname, strerror(errno));
+            }
+            else
+            {
+                printf("move from %s to %s\n", current_old_fname, current_fname);
+            }
+        }
     }
 
     free_inode_map(&directories_after_chages_map);
